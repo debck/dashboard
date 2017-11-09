@@ -156,3 +156,47 @@ func TestGetUserLinksForPod(t *testing.T) {
 		}
 	}
 }
+
+func TestGetUserLinksForPersistentVolume(t *testing.T) {
+	cases := []struct {
+		persistentVolume                *v1.PersistentVolume
+		namespace, name, resource, host string
+		expected                        []UserLink
+	}{
+		{
+			persistentVolume: &v1.PersistentVolume{
+				ObjectMeta: metaV1.ObjectMeta{
+					Name: "pv-1", Namespace: "ns-1",
+					Annotations: map[string]string{
+						"alpha.dashboard.kubernetes.io/links": "{" +
+							strconv.Quote("absolute_path") + ":" +
+							strconv.Quote("http://monitoring.com/debug/requests") + "," +
+							strconv.Quote("invalid") + ":" +
+							strconv.Quote("://www.logs.com/click/here") + "}"},
+				}},
+			namespace: "ns-1", name: "pv-1", resource: api.ResourceKindPersistentVolume, host: "http://localhost:8080",
+			expected: []UserLink{
+				UserLink{Description: "absolute_path", Link: "http://monitoring.com/debug/requests", IsURLValid: true},
+				UserLink{Description: "invalid", Link: "Invalid User Link: ://www.logs.com/click/here", IsURLValid: false}},
+		},
+	}
+
+	for _, c := range cases {
+
+		fakeClient := fake.NewSimpleClientset(c.persistentVolume)
+		actual, _ := GetUserLinks(fakeClient, c.namespace, c.name, c.resource, c.host)
+
+		// since order of the "actual" slice cannot be predicted we sort both slice so that the correct indices are compared
+		sort.Slice(actual, func(i, j int) bool {
+			return actual[i].Description < actual[j].Description
+		})
+		sort.Slice(c.expected, func(i, j int) bool {
+			return c.expected[i].Description < c.expected[j].Description
+		})
+
+		if !reflect.DeepEqual(actual, c.expected) {
+			t.Errorf("GetUserLinksForPersistentVolume(client,%#v, %#v) == \ngot: %#v, \nexpected %#v",
+				c.namespace, c.name, actual, c.expected)
+		}
+	}
+}

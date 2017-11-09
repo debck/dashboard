@@ -54,6 +54,8 @@ func GetUserLinks(client k8sClient.Interface, namespace, name, resource, host st
 		return getServiceLinks(client, namespace, name, host)
 	case resource == api.ResourceKindPod:
 		return getPodLinks(client, namespace, name, host)
+	case resource == api.ResourceKindPersistentVolume:
+		return getPersistentVolumeLinks(client, namespace, name, host)
 	default:
 		log.Printf("Unknown resource types %T!\n", resource)
 	}
@@ -135,6 +137,35 @@ func getPodLinks(client k8sClient.Interface, namespace, name, host string) ([]Us
 			userLink.Link = strings.Replace(pod.Status.PodIP, ".", "-", -1) + "." + namespace + ".pod.cluster.local" + strings.TrimPrefix(uri, podDNSName)
 			userLink.IsURLValid = true
 		} else if _, err := url.ParseRequestURI(uri); err != nil {
+			userLink.Link = "Invalid User Link: " + uri
+		} else {
+			userLink.Link = uri
+			userLink.IsURLValid = true
+		}
+		userLinks = append(userLinks, *userLink)
+	}
+	return userLinks, err
+}
+
+// getPersistentVolumeLinks get userlinks for links
+func getPersistentVolumeLinks(client k8sClient.Interface, namespace, name, host string) ([]UserLink, error) {
+	userLinks := []UserLink{}
+	persistentVolume, err := client.CoreV1().PersistentVolumes().Get(name, metaV1.GetOptions{})
+
+	if err != nil || len(persistentVolume.Annotations[annotationObj]) == 0 {
+		return userLinks, err
+	}
+
+	m := map[string]string{}
+	err = json.Unmarshal([]byte(persistentVolume.Annotations[annotationObj]), &m)
+	if err != nil {
+		return userLinks, err
+	}
+
+	for key, uri := range m {
+		userLink := new(UserLink)
+		userLink.Description = key
+		if _, err := url.ParseRequestURI(uri); err != nil {
 			userLink.Link = "Invalid User Link: " + uri
 		} else {
 			userLink.Link = uri
